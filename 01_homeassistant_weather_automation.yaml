@@ -1,0 +1,44 @@
+alias: "Pixel Clock: Weather"
+description: Shows weather info every 10 minutes for 4 minutes
+mode: single
+triggers:
+  - minutes: /10
+    trigger: time_pattern
+conditions:
+  - condition: not
+    conditions:
+      - condition: state
+        entity_id: weather.forecast_home
+        state: unavailable
+  - condition: not
+    conditions:
+      - condition: state
+        entity_id: weather.forecast_home
+        state: unknown
+actions:
+  - data:
+      icon_name: weather_*
+      mode: 5
+    action: esphome.pixel_clock_del_screen
+  - data:
+      default_font: true
+      r: 200
+      g: 200
+      b: 200
+      screen_time: 1
+      lifetime: 4
+      icon_name: >-
+        {%- set night_equivalent = {
+          "sunny": "clear_night",
+          "partlycloudy": "cloudy"
+        } -%}weather_{%- if states.sun.sun.state == "below_horizon" and
+        states.weather.forecast_home.state in night_equivalent -%}{{
+        night_equivalent[states.weather.forecast_home.state] }}{%- else -%}{{
+        states.weather.forecast_home.state | replace("-","_")}}{%- endif -%}
+      text: >-
+        {%- set st = states.weather.forecast_home -%}{{
+        st.attributes.temperature | round(0) }}{{ st.attributes.temperature_unit
+        | upper }} | {{ st.attributes.humidity | round(0) }} HR% | {{
+        st.attributes.wind_speed | round(0) }} {{ st.attributes.wind_speed_unit
+        | upper }}
+    action: esphome.pixel_clock_icon_screen

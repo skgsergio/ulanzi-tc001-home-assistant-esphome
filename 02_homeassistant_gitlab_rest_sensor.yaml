@@ -1,0 +1,27 @@
+rest:
+  # GitLab
+  - resource: "https://gitlab.com/api/v4/user_counts"
+    scan_interval: 600
+    headers:
+      PRIVATE-TOKEN: !secret gitlab_token
+    sensor:
+      - name: GitLab My Merge Requests
+        state_class: measurement
+        icon: mdi:source-pull
+        value_template: "{{ value_json.merge_requests }}"
+      - name: GitLab Assigned Merge Requests
+        state_class: measurement
+        icon: mdi:source-branch-check
+        value_template: "{{ value_json.assigned_merge_requests }}"
+      - name: GitLab Review Requested Merge Requests
+        state_class: measurement
+        icon: mdi:code-tags-check
+        value_template: "{{ value_json.review_requested_merge_requests }}"
+      - name: GitLab Assigned Issues
+        state_class: measurement
+        icon: mdi:ticket-outline
+        value_template: "{{ value_json.assigned_issues }}"
+      - name: GitLab To-Do
+        state_class: measurement
+        icon: mdi:format-list-checks
+        value_template: "{{ value_json.todos }}"

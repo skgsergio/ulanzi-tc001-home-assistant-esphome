@@ -1,0 +1,37 @@
+alias: "Pixel Clock: GitLab Status"
+description: Shows GitLab status every 30 minutes for 5 minutes
+triggers:
+  - minutes: /30
+    trigger: time_pattern
+  - trigger: state
+    entity_id:
+      - sensor.gitlab_to_do
+      - sensor.gitlab_review_requested_merge_requests
+conditions:
+  - condition: time
+    after: "07:00:00"
+    before: "19:00:00"
+    weekday:
+      - mon
+      - tue
+      - wed
+      - thu
+      - fri
+actions:
+  - data:
+      icon_name: gitlab
+      mode: 5
+    action: esphome.pixel_clock_del_screen
+  - data:
+      default_font: true
+      r: 253
+      g: 241
+      b: 221
+      screen_time: 1
+      lifetime: 5
+      icon_name: gitlab
+      text: >-
+        To-Do: {{ states.sensor.gitlab_to_do.state }} | Reviews: {{
+        states.sensor.gitlab_review_requested_merge_requests.state }}
+    action: esphome.pixel_clock_icon_screen
+mode: single

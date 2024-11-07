@@ -1,0 +1,407 @@
+## Ulanzi TC001
+#
+# PIN          bb f | GPIO## | Usage
+# ----|--------|----------------------------------
+#   6 | GPIO34 | [ADC6] Battery Sensor
+#   7 | GPIO35 | [ADC7] LDR Light Sensor (GL5516)
+#   8 | GPIO32 | RGB LED Matrix (WS2812)
+#  11 | GPIO26 | Left Button
+#  12 | GPIO27 | Middle Button
+#  13 | GPIO14 | Right Button
+#  23 | GPIO15 | Buzzer
+#  36 | GPIO22 | I2C SCL
+#  33 | GPIO21 | I2C SDA
+#
+# I2C Addr. | Usage
+# ----------|-------------------------------------
+#      0x44 | SHT3x Temperature & Humidity Sensor
+#      0x68 | DS1307 Real-Time Clock
+#
+
+substitutions:
+  device_name: pixel-clock
+  friendly_name: Pixel Clock
+  log_level: DEBUG
+
+globals:
+  - id: aab_enable
+    type: "bool"
+    restore_value: true
+    initial_value: "true"
+
+  - id: aab_lux_min
+    type: int
+    initial_value: "0"
+
+  - id: aab_lux_max
+    type: int
+    initial_value: "345"
+
+  - id: aab_brightness_min
+    type: int
+    initial_value: "37"
+
+  - id: aab_brightness_max
+    type: int
+    initial_value: "191"
+
+  - id: aab_brightness_mindiff
+    type: int
+    initial_value: "10"
+
+external_components:
+  - source:
+      type: git
+      url: https://github.com/lubeda/EspHoMaTriXv2
+      ref: "2024.5.1" # develop
+    refresh: 60s
+    components: [ehmtxv2]
+
+logger:
+  level: $log_level
+
+esphome:
+  name: $device_name
+  friendly_name: $friendly_name
+  comment: "Ulanzi TC001"
+  on_boot:
+    then:
+      - ds1307.read_time:
+      # - rtttl.play:
+      #     rtttl: "boot:d=8,o=5,b=180:c,e,g,c6"
+
+esp32:
+  board: esp32dev
+  framework:
+    advanced:
+      ignore_efuse_custom_mac: true
+
+safe_mode:
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+#web_server:
+
+font:
+  - id: font_calcium
+    file: resources/fonts/Calcium.ttf
+    size: 16
+    glyphs:  |
+      |¡!¿?"%()+*=,-_.:°€$@<>\/µ²³ 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÁÉÍÓÚÑáéíóúñ
+
+  - id: font_ehmtxv2
+    file: resources/fonts/EHMTXv2Custom.ttf
+    size: 16
+    glyphs:  |
+      |¡!¿?"%()+*=,-_.:°€$@<>\/µ²³ 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÁÉÍÓÚÑáéíóúñ
+
+binary_sensor:
+  - platform: gpio
+    pin:
+      number: GPIO26
+      inverted: true
+    name: "Left Button"
+    on_press:
+      then:
+        - number.decrement: screen_brightness
+
+  - platform: gpio
+    pin:
+      inverted: true
+      number: GPIO27
+      mode: INPUT_PULLUP
+    name: "Middle Button"
+    on_press:
+      then:
+        - switch.toggle: display_switch
+
+  - platform: gpio
+    pin:
+      number: GPIO14
+      inverted: true
+    name: "Right Button"
+    on_press:
+      then:
+        - number.increment: screen_brightness
+api:
+  encryption:
+    key: !secret api_encryption_key
+#  services:
+#    - service: rtttl_play
+#      variables:
+#        song: string
+#      then:
+#        - rtttl.play:
+#            rtttl: !lambda 'return song;'
+
+number:
+  - id: screen_brightness
+    platform: template
+    name: "Brightness"
+    min_value: 1
+    max_value: 255
+    update_interval: 10s
+    step: 1
+    lambda: |-
+      return id(ehmtx)->get_brightness();
+    set_action:
+      lambda: |-
+        id(ehmtx)->set_brightness(x);
+
+switch:
+  - id: display_switch
+    platform: template
+    name: "Display"
+    icon: "mdi:power"
+    restore_mode: ALWAYS_ON
+    lambda: |-
+      return id(ehmtx)->show_display;
+    turn_on_action:
+      lambda: |-
+        id(ehmtx)->set_display_on();
+    turn_off_action:
+      lambda: |-
+        id(ehmtx)->set_display_off();
+
+  - id: switch_autobrightness
+    platform: template
+    name: "Auto-Adjust Brightness"
+    icon: mdi:brightness-auto
+    restore_mode: RESTORE_DEFAULT_ON
+    lambda: |-
+      return id(aab_enable);
+    turn_on_action:
+      lambda: |-
+        id(aab_enable) = true;
+    turn_off_action:
+      lambda: |-
+        id(aab_enable) = false;
+
+sensor:
+  - platform: sht3xd
+    address: 0x44
+    temperature:
+      name: "Temperature"
+    humidity:
+      name: "Humidity"
+    update_interval: 60s
+
+  - platform: adc
+    pin: GPIO34
+    name: "Battery"
+    update_interval: 10s
+    device_class: battery
+    unit_of_measurement: '%'
+    accuracy_decimals: 0
+    attenuation: auto
+    filters:
+      - sliding_window_moving_average:
+          window_size: 15
+          send_every: 15
+          send_first_at: 1
+      - multiply: 1.6
+      - lambda: |-
+          auto r = ((x - 3) / 0.69 * 100.00);
+          if (r >= 100) return 100;
+          if (r > 0) return r;
+          if (r <= 0) return 1;
+          return 0;
+
+  - platform: adc
+    pin: GPIO35
+    name: "Illuminance"
+    update_interval: 10s
+    device_class: illuminance
+    unit_of_measurement: lx
+    accuracy_decimals: 0
+    attenuation: auto
+    filters:
+      - lambda: |-
+          return (x / 10000.0) * 2000000.0 - 15;
+    on_value:
+      then:
+        - lambda: |-
+            if (id(aab_enable)) {
+              int lx = min(max(static_cast<int>(round(x)), id(aab_lux_min)), id(aab_lux_max));
+
+              int br = (((lx - id(aab_lux_min)) * (id(aab_brightness_max) - id(aab_brightness_min))) / (id(aab_lux_max) - id(aab_lux_min))) + id(aab_brightness_min);
+
+              if (abs(id(ehmtx)->get_brightness() - br) >= id(aab_brightness_mindiff)) id(ehmtx)->set_brightness(br);
+            }
+
+  - platform: internal_temperature
+    name: "Internal Temperature"
+
+  - platform: wifi_signal
+    id: wifi_signal_dbm
+    name: "WiFi Signal Strength"
+
+  - platform: copy
+    source_id: wifi_signal_dbm
+    name: "WiFi Signal Percent"
+    device_class: ""
+    unit_of_measurement: "%"
+    entity_category: "diagnostic"
+    filters:
+      - lambda: return min(max(2 * (x + 100.0), 0.0), 100.0);
+
+output:
+#  - id: rtttl_out
+#    platform: ledc
+#    pin: GPIO15
+  - platform: gpio
+    pin:
+      number: GPIO15
+      ignore_strapping_warning: true
+    id: rtttl_out_gpio
+
+#rtttl:
+#  output: rtttl_out
+
+i2c:
+  id: bus_a
+  sda: GPIO21
+  scl: GPIO22
+  scan: true
+
+light:
+  - id: light_ehmtx
+    platform: neopixelbus
+    type: GRB
+    variant: WS2812
+    pin: GPIO32
+    num_leds: 256
+    color_correct: [30%, 30%, 30%]
+    gamma_correct: 2.0
+    name: "Light"
+    restore_mode: ALWAYS_OFF
+    on_turn_on:
+      lambda: |-
+        id(display_ehmtx)->set_enabled(false);
+    on_turn_off:
+      lambda: |-
+        id(display_ehmtx)->set_enabled(true);
+
+time:
+  - id: time_ehmtx
+    platform: ds1307
+    address: 0x68
+    update_interval: never
+
+  - platform: homeassistant
+    on_time_sync:
+      then:
+        ds1307.write_time:
+
+
+display:
+  - id: display_ehmtx
+    platform: addressable_light
+    addressable_light_id: light_ehmtx
+    width: 32
+    height: 8
+    pixel_mapper: |-
+      if (y % 2 == 0) {
+        return (y * 32) + x;
+      }
+      return (y * 32) + (31 - x);
+    rotation: 0°
+    update_interval: 16ms
+    auto_clear_enabled: true
+    lambda: |-
+      id(ehmtx)->tick();
+      id(ehmtx)->draw();
+
+ehmtxv2:
+  id: ehmtx
+  matrix_component: display_ehmtx
+  time_component: time_ehmtx
+  default_font_id: font_ehmtxv2
+  default_font_xoffset: 1
+  default_font_yoffset: 6
+  special_font_id: font_calcium
+  special_font_xoffset: 1
+  special_font_yoffset: 7
+  date_format: "%d/%m"
+  time_format: "%H:%M:%S"
+  show_seconds: false
+  #show_date: true
+  show_dow: true
+  week_start_monday: true
+  scroll_interval: 80
+  scroll_count: 2
+  frame_interval: 192
+  brightness: 127
+  icons2html: true
+  on_start_running:
+    then:
+      lambda: |-
+        id(ehmtx)->set_weekday_color(100, 100, 100);
+        id(ehmtx)->set_today_color(200, 90, 0);
+  on_empty_queue:
+    then:
+      lambda: |-
+        id(ehmtx)->clock_screen(10,10);
+        id(ehmtx)->date_screen(10,5);
+  icons:
+    - id: ha
+      lameid: 7956
+    - id: temp
+      lameid: 2422
+    - id: humidity
+      lameid: 51764
+    - id: co2
+      lameid: 30662
+    - id: calendar
+      lameid: 12345
+    - id: plug
+      lameid: 403
+    - id: gitlab
+      lameid: 4151
+    # Weather
+    - id: weather_sunny
+      lameid: 2282
+      frame_duration: 100
+    - id: weather_clear_night
+      lameid: 52163
+    - id: weather_cloudy
+      lameid: 2283
+    - id: weather_fog
+      lameid: 52167
+    - id: weather_rainy
+      lameid: 26565
+    - id: weather_pouring
+      lameid: 49300
+    - id: weather_lightning
+      lameid: 23713
+    - id: weather_lightning_rainy
+      lameid: 49299
+    - id: weather_partlycloudy
+      lameid: 2286
+    - id: weather_snowy
+      lameid: 2289
+    - id: weather_snowy_rainy
+      lameid: 49301
+
+# Hack for non working on empty queue
+interval:
+  - interval: 720min
+    then:
+      lambda: |-
+        id(ehmtx)->clock_screen(1440,10);
+        id(ehmtx)->date_screen(1440,5);
+
+# Hack for bug in 2023.7.x
+image:
+   - file: resources/images/1pixel.gif
+     id: breaking20237
+
+animation:
+  - file: resources/images/1pixel.gif
+    id: breaking202371
